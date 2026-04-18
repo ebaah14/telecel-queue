@@ -1,14 +1,33 @@
 from flask import Flask, render_template_string, request, jsonify, send_file
+from gtts import gTTS
+import os
 
 app = Flask(__name__)
 
+# ================= CONFIG =================
 current_number = 1
 announcement = "WELCOME TO TELECEL • PLEASE HAVE YOUR ID READY •"
 
-desks = {"Desk 1":"---","Desk 2":"---","Desk 3":"---","Desk 4":"---"}
+DESKS = [f"Desk {i}" for i in range(1, 8)]  # 7 desks
+desks = {d: "---" for d in DESKS}
 
-last_called = {"number":"001","desk":"WELCOME"}
+last_called = {"number": "001", "desk": "WELCOME"}
 
+VOICE_FOLDER = "voices"
+os.makedirs(VOICE_FOLDER, exist_ok=True)
+
+# ================= VOICE =================
+def generate_voice(number, desk):
+    filename = f"{VOICE_FOLDER}/{number}_{desk}.mp3"
+
+    if not os.path.exists(filename):
+        text = f"Number {int(number)}, please go to {desk}"
+        tts = gTTS(text=text, lang='en')
+        tts.save(filename)
+
+    return filename
+
+# ================= DISPLAY =================
 display_html = """
 <!DOCTYPE html>
 <html>
@@ -18,85 +37,89 @@ display_html = """
 <style>
 body {margin:0;font-family:Arial;background:white;text-align:center;}
 .top {background:red;color:white;padding:10px;font-size:20px;overflow:hidden;}
-#scroll {white-space:nowrap;display:inline-block;animation:scroll 10s linear infinite;}
+#scroll {white-space:nowrap;display:inline-block;animation:scroll 12s linear infinite;}
 @keyframes scroll {from{transform:translateX(100%);} to{transform:translateX(-100%);}}
+
 .number {font-size:150px;color:red;text-shadow:3px 3px black;}
 .desk {font-size:50px;}
-.logo {position:fixed;bottom:10px;left:10px;width:100px;}
+
+.panel {position:fixed;right:0;top:60px;width:250px;background:#f3f4f6;padding:10px;}
+.row {display:flex;justify-content:space-between;margin:5px 0;font-weight:bold;}
+
+.overlay {
+    position:fixed;top:0;left:0;width:100%;height:100%;
+    background:black;color:white;display:flex;
+    justify-content:center;align-items:center;
+    font-size:30px;z-index:9999;
+}
 </style>
 
 </head>
 <body>
 
+<div class="overlay" id="unlock">
+TAP TO ENABLE SOUND 🔊
+</div>
+
 <div class="top"><span id="scroll">{{announcement}}</span></div>
+
 <div class="number" id="number">{{number}}</div>
 <div class="desk" id="desk">{{desk}}</div>
 
-<img src="/logo" class="logo">
+<div class="panel" id="panel"></div>
+
 <audio id="ding" src="/sound"></audio>
+<audio id="voice"></audio>
 
 <script>
-let lastNumber = "";
 let unlocked = false;
+let lastNumber = "";
 
-// FORCE unlock
-function unlock() {
-    let audio = document.getElementById("ding");
-    audio.play().then(()=>{
-        audio.pause();
-        audio.currentTime = 0;
+// 🔓 UNLOCK AUDIO
+document.getElementById("unlock").onclick = function(){
+    let ding = document.getElementById("ding");
+    ding.play().then(()=>{
+        ding.pause();
+        ding.currentTime = 0;
         unlocked = true;
-        console.log("Unlocked 🔊");
-    }).catch(()=>{});
-}
+        document.getElementById("unlock").style.display="none";
+    });
+};
 
-document.addEventListener("click", unlock);
-setTimeout(unlock, 1500);
-
-// SPEAK
-function speak(text) {
-    if (!unlocked) return;
-
-    try {
-        speechSynthesis.cancel();
-        let msg = new SpeechSynthesisUtterance(text);
-        msg.rate = 0.9;
-        msg.pitch = 1;
-
-        let voices = speechSynthesis.getVoices();
-        msg.voice = voices.find(v=>v.name.toLowerCase().includes("female")) || voices[0];
-
-        speechSynthesis.speak(msg);
-    } catch(e){
-        console.log("Voice failed");
-    }
-}
-
-// LOOP
+// 🔄 LOOP
 setInterval(()=>{
-    fetch("/data")
-    .then(r=>r.json())
-    .then(data=>{
-        if(data.number !== lastNumber){
+fetch("/data")
+.then(r=>r.json())
+.then(data=>{
 
-            document.getElementById("number").innerText = data.number;
-            document.getElementById("desk").innerText = data.desk;
-            document.getElementById("scroll").innerText = data.announcement;
+    document.getElementById("panel").innerHTML =
+        Object.entries(data.desks).map(
+            ([k,v]) => `<div class="row">${k} <span>${v}</span></div>`
+        ).join("");
 
+    if(data.number !== lastNumber){
+
+        document.getElementById("number").innerText = data.number;
+        document.getElementById("desk").innerText = data.desk;
+        document.getElementById("scroll").innerText = data.announcement;
+
+        if(unlocked){
             let ding = document.getElementById("ding");
+            let voice = document.getElementById("voice");
 
-            if(unlocked){
-                ding.currentTime = 0;
-                ding.play().catch(()=>{});
-            }
+            ding.currentTime = 0;
+            ding.play().catch(()=>{});
 
             setTimeout(()=>{
-                speak("Number " + data.number + ". " + data.desk);
+                voice.src = "/voice/" + data.number + "/" + data.desk;
+                voice.play().catch(()=>{});
             },2000);
-
-            lastNumber = data.number;
         }
-    });
+
+        lastNumber = data.number;
+    }
+
+});
 },1000);
 </script>
 
@@ -104,6 +127,7 @@ setInterval(()=>{
 </html>
 """
 
+# ================= STAFF =================
 staff_html = """
 <!DOCTYPE html>
 <html>
@@ -112,6 +136,7 @@ staff_html = """
 <style>
 body{background:#0f172a;color:white;text-align:center;font-family:Arial;}
 button{padding:10px;margin:5px;font-size:16px;}
+input,select{padding:8px;margin:5px;}
 </style>
 </head>
 <body>
@@ -127,6 +152,7 @@ button{padding:10px;margin:5px;font-size:16px;}
 </form>
 {% endfor %}
 
+<h2>Manual Assign</h2>
 <form method="post">
 <input name="manual_number" placeholder="Number">
 <select name="desk">
@@ -141,52 +167,63 @@ button{padding:10px;margin:5px;font-size:16px;}
 </html>
 """
 
+# ================= ROUTES =================
 @app.route("/")
 def home():
-    return render_template_string(display_html, **last_called, announcement=announcement)
+    return render_template_string(display_html,
+        number=last_called["number"],
+        desk=last_called["desk"],
+        announcement=announcement
+    )
 
 @app.route("/staff", methods=["GET","POST"])
 def staff():
     global current_number
 
-    if request.method=="POST":
+    if request.method == "POST":
         action = request.form.get("action")
         desk = request.form.get("desk")
 
-        if action=="next":
+        if action == "next":
             num = str(current_number).zfill(3)
-            desks[desk]=num
-            last_called["number"]=num
-            last_called["desk"]=f"GO TO {desk}"
-            current_number+=1
+            desks[desk] = num
+            last_called["number"] = num
+            last_called["desk"] = f"GO TO {desk}"
+            current_number += 1
 
-        elif action=="recall":
+        elif action == "recall":
             num = desks.get(desk)
-            if num!="---":
-                last_called["number"]=num
-                last_called["desk"]=f"GO TO {desk}"
+            if num != "---":
+                last_called["number"] = num
+                last_called["desk"] = f"GO TO {desk}"
 
-        elif action=="assign":
+        elif action == "assign":
             num = request.form.get("manual_number")
             if num and num.isdigit():
                 num = str(int(num)).zfill(3)
-                desks[desk]=num
-                last_called["number"]=num
-                last_called["desk"]=f"GO TO {desk}"
+                desks[desk] = num
+                last_called["number"] = num
+                last_called["desk"] = f"GO TO {desk}"
 
     return render_template_string(staff_html, desks=desks)
 
 @app.route("/data")
 def data():
-    return jsonify({**last_called,"announcement":announcement})
+    return jsonify({
+        "number": last_called["number"],
+        "desk": last_called["desk"],
+        "announcement": announcement,
+        "desks": desks
+    })
+
+@app.route("/voice/<num>/<desk>")
+def voice(num, desk):
+    return send_file(generate_voice(num, desk))
 
 @app.route("/sound")
 def sound():
     return send_file("dingdong.wav")
 
-@app.route("/logo")
-def logo():
-    return send_file("logo.gif")
-
+# ================= RUN =================
 if __name__ == "__main__":
     app.run()
