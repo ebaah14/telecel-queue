@@ -1,11 +1,10 @@
-from flask import Flask, request, jsonify, send_file
-from flask import render_template_string
+from flask import Flask, request, jsonify, send_file, render_template_string
 from gtts import gTTS
 import os
 
 app = Flask(__name__)
 
-# ========= DATA =========
+# ================= DATA =================
 current_number = 1
 announcement = "WELCOME TO TELECEL • PLEASE HAVE YOUR ID READY"
 
@@ -16,7 +15,7 @@ last_called = {"number": "001", "desk": "WELCOME"}
 
 os.makedirs("voices", exist_ok=True)
 
-# ========= VOICE =========
+# ================= VOICE =================
 def get_voice(num, desk):
     filename = f"voices/{num}_{desk}.mp3"
 
@@ -27,23 +26,86 @@ def get_voice(num, desk):
 
     return filename
 
-# ========= DISPLAY =========
+# ================= DISPLAY =================
 @app.route("/")
 def display():
     return render_template_string("""
+<!DOCTYPE html>
 <html>
 <head>
-<title>DISPLAY</title>
+<title>QUEUE DISPLAY</title>
+
 <style>
-body {margin:0;text-align:center;font-family:Arial;}
-.top {background:red;color:white;padding:10px;font-size:20px;}
-.number {font-size:150px;color:red;text-shadow:3px 3px black;}
-.desk {font-size:50px;}
-.panel {position:fixed;right:0;top:60px;width:250px;background:#eee;padding:10px;}
+body {
+    margin:0;
+    font-family:Arial;
+    background:white;
+    text-align:center;
+}
+
+/* Announcement */
+.top {
+    background:#dc2626;
+    color:white;
+    padding:12px;
+    font-size:22px;
+    font-weight:bold;
+}
+
+/* Number */
+.number {
+    font-size:160px;
+    color:#dc2626;
+    text-shadow:4px 4px black;
+}
+
+/* Desk */
+.desk {
+    font-size:50px;
+    margin-bottom:20px;
+}
+
+/* Desk panel */
+.panel {
+    position:fixed;
+    right:0;
+    top:60px;
+    width:260px;
+    background:#f3f4f6;
+    padding:10px;
+    border-left:3px solid #dc2626;
+}
+
+.row {
+    display:flex;
+    justify-content:space-between;
+    margin:6px 0;
+    font-weight:bold;
+}
+
+/* Unlock overlay */
+.overlay {
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:black;
+    color:white;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    font-size:28px;
+    z-index:9999;
+}
 </style>
 </head>
 
 <body>
+
+<div class="overlay" id="unlock">
+TAP SCREEN TO ENABLE SOUND 🔊
+</div>
 
 <div class="top" id="announcement"></div>
 
@@ -52,23 +114,27 @@ body {margin:0;text-align:center;font-family:Arial;}
 
 <div class="panel" id="panel"></div>
 
-<audio id="ding" src="/sound"></audio>
+<audio id="ding" src="/sound" preload="auto"></audio>
 <audio id="voice"></audio>
 
 <script>
 let unlocked = false;
 let last = "";
 
-// unlock audio
-document.body.onclick = function(){
-    let d = document.getElementById("ding");
-    d.play().then(()=>{
-        d.pause();
-        d.currentTime=0;
-        unlocked = true;
-    });
-};
+// 🔓 unlock audio (CRITICAL)
+document.body.addEventListener("click", function(){
+    if(!unlocked){
+        let d = document.getElementById("ding");
+        d.play().then(()=>{
+            d.pause();
+            d.currentTime = 0;
+            unlocked = true;
+            document.getElementById("unlock").style.display="none";
+        }).catch(()=>{});
+    }
+});
 
+// 🔄 polling
 setInterval(()=>{
 fetch("/data").then(r=>r.json()).then(data=>{
 
@@ -76,8 +142,8 @@ fetch("/data").then(r=>r.json()).then(data=>{
 
     document.getElementById("panel").innerHTML =
         Object.entries(data.desks).map(
-            ([k,v]) => k + ": " + v
-        ).join("<br>");
+            ([k,v]) => `<div class="row">${k} <span>${v}</span></div>`
+        ).join("");
 
     if(data.number !== last){
 
@@ -88,11 +154,12 @@ fetch("/data").then(r=>r.json()).then(data=>{
             let ding = document.getElementById("ding");
             let voice = document.getElementById("voice");
 
-            ding.play();
+            ding.currentTime = 0;
+            ding.play().catch(()=>{});
 
             setTimeout(()=>{
                 voice.src = "/voice/" + data.number + "/" + data.desk;
-                voice.play();
+                voice.play().catch(()=>{});
             },2000);
         }
 
@@ -107,7 +174,7 @@ fetch("/data").then(r=>r.json()).then(data=>{
 </html>
 """)
 
-# ========= STAFF =========
+# ================= STAFF =================
 @app.route("/staff", methods=["GET","POST"])
 def staff():
     global current_number, announcement
@@ -138,38 +205,86 @@ def staff():
                 last_called["desk"] = f"GO TO {desk}"
 
         elif action == "announce":
-            announcement = request.form.get("text")
+            txt = request.form.get("text")
+            if txt:
+                announcement = txt
 
     return render_template_string("""
+<!DOCTYPE html>
+<html>
+<head>
+<title>STAFF PANEL</title>
+
+<style>
+body {
+    background:#0f172a;
+    color:white;
+    font-family:Arial;
+    padding:20px;
+}
+
+h1 {text-align:center;}
+
+.card {
+    background:#1e293b;
+    padding:15px;
+    margin:10px;
+    border-radius:10px;
+}
+
+button {
+    padding:10px;
+    margin:5px;
+    border:none;
+    border-radius:6px;
+    cursor:pointer;
+}
+
+.next {background:#22c55e;}
+.recall {background:#3b82f6;color:white;}
+.assign {background:#f59e0b;}
+</style>
+</head>
+
+<body>
+
 <h1>STAFF CONTROL</h1>
 
 {% for d in desks %}
-<p>{{d}} → {{desks[d]}}</p>
-
+<div class="card">
+<h3>{{d}} → {{desks[d]}}</h3>
 <form method="post">
 <input type="hidden" name="desk" value="{{d}}">
-<button name="action" value="next">NEXT</button>
-<button name="action" value="recall">RECALL</button>
+<button class="next" name="action" value="next">NEXT</button>
+<button class="recall" name="action" value="recall">RECALL</button>
 </form>
+</div>
 {% endfor %}
 
-<h3>Manual</h3>
+<div class="card">
+<h3>Manual Assign</h3>
 <form method="post">
-<input name="num">
+<input name="num" placeholder="Number">
 <select name="desk">
 {% for d in desks %}<option>{{d}}</option>{% endfor %}
 </select>
-<button name="action" value="assign">Assign</button>
+<button class="assign" name="action" value="assign">Assign</button>
 </form>
+</div>
 
+<div class="card">
 <h3>Announcement</h3>
 <form method="post">
-<input name="text">
+<input name="text" placeholder="New message">
 <button name="action" value="announce">Update</button>
 </form>
+</div>
+
+</body>
+</html>
 """, desks=desks)
 
-# ========= DATA =========
+# ================= DATA =================
 @app.route("/data")
 def data():
     return jsonify({
@@ -179,7 +294,7 @@ def data():
         "desks": desks
     })
 
-# ========= AUDIO =========
+# ================= AUDIO =================
 @app.route("/voice/<num>/<desk>")
 def voice(num, desk):
     return send_file(get_voice(num, desk))
@@ -188,6 +303,6 @@ def voice(num, desk):
 def sound():
     return send_file("dingdong.wav")
 
-# ========= RUN =========
+# ================= RUN =================
 if __name__ == "__main__":
     app.run()
