@@ -37,7 +37,7 @@ body { margin:0; font-family:Arial; background:white; text-align:center; }
 #scroll {
     display:inline-block;
     padding-left:100%;
-    animation:scroll 12s linear infinite;
+    animation:scroll 10s linear infinite;
 }
 
 @keyframes scroll {
@@ -48,7 +48,7 @@ body { margin:0; font-family:Arial; background:white; text-align:center; }
 .number {
     font-size:150px;
     color:red;
-    text-shadow: 3px 3px black;
+    text-shadow: 4px 4px black;
 }
 
 .desk {
@@ -76,46 +76,54 @@ body { margin:0; font-family:Arial; background:white; text-align:center; }
 
 <script>
 let lastNumber = "";
-let audioUnlocked = false;
+let audioReady = false;
 
-// Unlock audio
-document.addEventListener("click", () => {
-    audioUnlocked = true;
-
+// 🔥 FORCE AUDIO UNLOCK
+function unlockAudio() {
     let ding = document.getElementById("ding");
+
     ding.play().then(() => {
         ding.pause();
         ding.currentTime = 0;
-    }).catch(() => {});
-});
-
-// Female voice
-function getFemaleVoice() {
-    let voices = speechSynthesis.getVoices();
-    return voices.find(v =>
-        v.name.toLowerCase().includes("female") ||
-        v.name.toLowerCase().includes("zira") ||
-        v.name.toLowerCase().includes("google uk english female")
-    ) || voices[0];
+        audioReady = true;
+        console.log("Audio unlocked ✅");
+    }).catch(() => {
+        console.log("Tap screen to enable sound");
+    });
 }
 
-// Speak
+// Auto try unlock
+setTimeout(unlockAudio, 1000);
+
+// Also unlock on click
+document.addEventListener("click", unlockAudio);
+
+// 🎤 VOICE
 function speak(text) {
-    if (!audioUnlocked) return;
+    if (!audioReady) return;
 
     speechSynthesis.cancel();
 
     let speech = new SpeechSynthesisUtterance(text);
-    speech.voice = getFemaleVoice();
+
+    let voices = speechSynthesis.getVoices();
+    let female = voices.find(v =>
+        v.name.toLowerCase().includes("zira") ||
+        v.name.toLowerCase().includes("female") ||
+        v.name.toLowerCase().includes("google uk english female")
+    );
+
+    speech.voice = female || voices[0];
     speech.rate = 0.9;
     speech.pitch = 1;
 
     speechSynthesis.speak(speech);
 }
 
+// Ensure voices load
 speechSynthesis.onvoiceschanged = () => {};
 
-// Loop
+// 🔁 MAIN LOOP
 setInterval(() => {
     fetch('/data')
     .then(res => res.json())
@@ -129,7 +137,7 @@ setInterval(() => {
 
             let ding = document.getElementById("ding");
 
-            if (audioUnlocked) {
+            if (audioReady) {
                 ding.currentTime = 0;
                 ding.play();
             }
@@ -216,7 +224,6 @@ input, select {
 
 # ================= ROUTES =================
 
-# 🔥 FIX: homepage now works
 @app.route("/")
 def home():
     return render_template_string(display_html,
@@ -227,11 +234,7 @@ def home():
 
 @app.route("/display")
 def display():
-    return render_template_string(display_html,
-        number=last_called["number"],
-        desk=last_called["desk"],
-        announcement=announcement
-    )
+    return home()
 
 @app.route("/staff", methods=["GET","POST"])
 def staff():
