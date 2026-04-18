@@ -78,7 +78,7 @@ body { margin:0; font-family:Arial; background:white; text-align:center; }
 let lastNumber = "";
 let audioUnlocked = false;
 
-// Unlock audio on first tap
+// Unlock audio
 document.addEventListener("click", () => {
     audioUnlocked = true;
 
@@ -89,7 +89,7 @@ document.addEventListener("click", () => {
     }).catch(() => {});
 });
 
-// Get female voice
+// Female voice
 function getFemaleVoice() {
     let voices = speechSynthesis.getVoices();
     return voices.find(v =>
@@ -99,7 +99,7 @@ function getFemaleVoice() {
     ) || voices[0];
 }
 
-// Speak safely
+// Speak
 function speak(text) {
     if (!audioUnlocked) return;
 
@@ -113,10 +113,9 @@ function speak(text) {
     speechSynthesis.speak(speech);
 }
 
-// Ensure voices load
 speechSynthesis.onvoiceschanged = () => {};
 
-// Main loop
+// Loop
 setInterval(() => {
     fetch('/data')
     .then(res => res.json())
@@ -216,12 +215,23 @@ input, select {
 """
 
 # ================= ROUTES =================
+
+# 🔥 FIX: homepage now works
+@app.route("/")
+def home():
+    return render_template_string(display_html,
+        number=last_called["number"],
+        desk=last_called["desk"],
+        announcement=announcement
+    )
+
 @app.route("/display")
 def display():
     return render_template_string(display_html,
-                                  number=last_called["number"],
-                                  desk=last_called["desk"],
-                                  announcement=announcement)
+        number=last_called["number"],
+        desk=last_called["desk"],
+        announcement=announcement
+    )
 
 @app.route("/staff", methods=["GET","POST"])
 def staff():
