@@ -12,16 +12,16 @@ DESKS = [f"Desk {i}" for i in range(1, 8)]
 desks = {d: "---" for d in DESKS}
 
 last_called = {"number": "001", "desk": "Desk 1"}
+call_id = 0  # 🔥 NEW: triggers recall updates
 
 os.makedirs("voices", exist_ok=True)
 
 # ================= VOICE =================
 def get_voice(num, desk):
-    clean_desk = desk.replace("GO TO ", "")
-    filename = f"voices/{num}_{clean_desk}.mp3"
+    filename = f"voices/{num}_{desk}.mp3"
 
     if not os.path.exists(filename):
-        text = f"Number {int(num)}, please go to {clean_desk}"
+        text = f"Number {int(num)}, please go to {desk}"
         tts = gTTS(text=text, lang="en")
         tts.save(filename)
 
@@ -64,28 +64,28 @@ font-size:28px;z-index:9999;
 
 <div class="panel" id="panel"></div>
 
-<audio id="ding" src="/sound" preload="auto"></audio>
-<audio id="voice" preload="auto"></audio>
+<audio id="ding" src="/sound"></audio>
+<audio id="voice"></audio>
 
 <script>
 let unlocked = false;
-let last = "";
+let lastCallId = -1;
 
-// 🔓 unlock audio properly
+// 🔓 unlock audio
 document.body.addEventListener("click", async function(){
     if(!unlocked){
-        let ding = document.getElementById("ding");
+        let d = document.getElementById("ding");
         try{
-            await ding.play();
-            ding.pause();
-            ding.currentTime = 0;
+            await d.play();
+            d.pause();
+            d.currentTime = 0;
             unlocked = true;
             document.getElementById("unlock").style.display="none";
         }catch(e){}
     }
 });
 
-// 🔁 polling
+// 🔄 polling
 setInterval(()=>{
 fetch("/data").then(r=>r.json()).then(async data=>{
 
@@ -96,7 +96,8 @@ fetch("/data").then(r=>r.json()).then(async data=>{
             ([k,v]) => `<div class="row">${k} <span>${v}</span></div>`
         ).join("");
 
-    if(data.number !== last){
+    // 🔥 FIX: use call_id instead of number
+    if(data.call_id !== lastCallId){
 
         document.getElementById("number").innerText = data.number;
         document.getElementById("desk").innerText = data.desk;
@@ -110,7 +111,6 @@ fetch("/data").then(r=>r.json()).then(async data=>{
                 await ding.play();
             }catch(e){}
 
-            // wait 2 sec after ding
             setTimeout(async ()=>{
                 try{
                     voice.src = "/voice/" + data.number + "/" + data.desk;
@@ -119,11 +119,11 @@ fetch("/data").then(r=>r.json()).then(async data=>{
             },2000);
         }
 
-        last = data.number;
+        lastCallId = data.call_id;
     }
 
 });
-},1200);
+},1000);
 </script>
 
 </body>
@@ -133,7 +133,7 @@ fetch("/data").then(r=>r.json()).then(async data=>{
 # ================= STAFF =================
 @app.route("/staff", methods=["GET","POST"])
 def staff():
-    global current_number, announcement
+    global current_number, announcement, call_id
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -145,12 +145,14 @@ def staff():
             last_called["number"] = num
             last_called["desk"] = desk
             current_number += 1
+            call_id += 1  # 🔥 trigger
 
         elif action == "recall":
             num = desks.get(desk)
             if num != "---":
                 last_called["number"] = num
                 last_called["desk"] = desk
+                call_id += 1  # 🔥 trigger recall
 
         elif action == "assign":
             num = request.form.get("num")
@@ -159,6 +161,7 @@ def staff():
                 desks[desk] = num
                 last_called["number"] = num
                 last_called["desk"] = desk
+                call_id += 1
 
         elif action == "announce":
             txt = request.form.get("text")
@@ -221,7 +224,8 @@ def data():
         "number": last_called["number"],
         "desk": last_called["desk"],
         "announcement": announcement,
-        "desks": desks
+        "desks": desks,
+        "call_id": call_id  # 🔥 important
     })
 
 # ================= AUDIO =================
