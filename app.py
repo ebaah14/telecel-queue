@@ -1,134 +1,121 @@
-from flask import Flask, request, jsonify, send_file, render_template_string
+from flask import Flask, render_template_string, request, jsonify, send_file
 from gtts import gTTS
 import os
 
 app = Flask(__name__)
 
-# ================= DATA =================
+# ================= CONFIG =================
 current_number = 1
-announcement = "WELCOME TO TELECEL • PLEASE HAVE YOUR ID READY"
+announcement = "WELCOME TO TELECEL • PLEASE HAVE YOUR ID READY •"
 
 DESKS = [f"Desk {i}" for i in range(1, 8)]
 desks = {d: "---" for d in DESKS}
 
-last_called = {"number": "001", "desk": "Desk 1"}
-call_id = 0
+last_called = {"number": "001", "desk": "WELCOME"}
 
-os.makedirs("voices", exist_ok=True)
+VOICE_FOLDER = "voices"
+os.makedirs(VOICE_FOLDER, exist_ok=True)
 
 # ================= VOICE =================
-def get_voice(num, desk):
-    filename = f"voices/{num}_{desk}.mp3"
+def generate_voice(number, desk):
+    filename = f"{VOICE_FOLDER}/{number}_{desk}.mp3"
 
     if not os.path.exists(filename):
-        text = f"Number {int(num)}, please go to {desk}"
-        tts = gTTS(text=text, lang="en")
+        text = f"Number {int(number)}, please go to {desk}"
+        tts = gTTS(text=text, lang='en')
         tts.save(filename)
 
     return filename
 
 # ================= DISPLAY =================
-@app.route("/")
-def display():
-    return render_template_string("""
+display_html = """
 <!DOCTYPE html>
 <html>
 <head>
-<title>QUEUE DISPLAY</title>
+<title>DISPLAY</title>
 
 <style>
-body {margin:0;font-family:Arial;text-align:center;background:white;}
-.top {background:#dc2626;color:white;padding:12px;font-size:22px;}
-.number {font-size:160px;color:#dc2626;text-shadow:4px 4px black;}
-.desk {font-size:50px;margin-bottom:20px;}
+body {margin:0;font-family:Arial;background:white;text-align:center;}
+.top {background:red;color:white;padding:12px;font-size:22px;overflow:hidden;}
+#scroll {white-space:nowrap;display:inline-block;animation:scroll 12s linear infinite;}
+@keyframes scroll {from{transform:translateX(100%);} to{transform:translateX(-100%);}}
+
+.number {font-size:160px;color:red;text-shadow:4px 4px black;}
+.desk {font-size:55px;margin-bottom:10px;}
+
 .panel {position:fixed;right:0;top:60px;width:260px;background:#f3f4f6;padding:10px;}
+.row {display:flex;justify-content:space-between;margin:6px 0;font-weight:bold;}
 
 .overlay {
 position:fixed;top:0;left:0;width:100%;height:100%;
 background:black;color:white;display:flex;
 justify-content:center;align-items:center;
 font-size:28px;z-index:9999;
-cursor:pointer;
 }
 </style>
-</head>
 
+</head>
 <body>
 
-<div class="overlay" id="unlock">TAP ANYWHERE TO ENABLE SOUND 🔊</div>
+<div class="overlay" id="unlock">TAP SCREEN TO ENABLE SOUND 🔊</div>
 
-<div class="top" id="announcement"></div>
-<div class="number" id="number">001</div>
-<div class="desk" id="desk">Desk 1</div>
+<div class="top"><span id="scroll">{{announcement}}</span></div>
+
+<div class="number" id="number">{{number}}</div>
+<div class="desk" id="desk">{{desk}}</div>
+
 <div class="panel" id="panel"></div>
 
-<audio id="ding" src="/sound" preload="auto"></audio>
-<audio id="voice" preload="auto"></audio>
+<audio id="ding" src="/sound"></audio>
+<audio id="voice"></audio>
 
 <script>
 let unlocked = false;
-let lastCallId = -1;
+let lastNumber = "";
 
-// 🔓 Unlock audio PROPERLY
-document.getElementById("unlock").addEventListener("click", async () => {
-    const ding = document.getElementById("ding");
-
-    try {
-        await ding.play();
+// 🔊 AUDIO UNLOCK
+document.body.addEventListener("click", function unlock(){
+    let ding = document.getElementById("ding");
+    ding.play().then(()=>{
         ding.pause();
         ding.currentTime = 0;
-
         unlocked = true;
-        document.getElementById("unlock").style.display = "none";
-        console.log("🔊 Audio unlocked");
-    } catch (e) {
-        alert("Tap again to enable sound");
-    }
+        document.getElementById("unlock").style.display="none";
+        document.body.removeEventListener("click", unlock);
+    }).catch(()=>{});
 });
 
-// 🔊 FORCE PLAY FUNCTION (retry system)
-async function playAudio(audio){
-    try{
-        await audio.play();
-    }catch(e){
-        setTimeout(async ()=>{
-            try{ await audio.play(); }catch(e){}
-        },300);
-    }
-}
-
-// 🔁 POLLING
+// 🔁 LOOP
 setInterval(()=>{
-fetch("/data").then(r=>r.json()).then(async data=>{
-
-    document.getElementById("announcement").innerText = data.announcement;
+fetch("/data")
+.then(r=>r.json())
+.then(data=>{
 
     document.getElementById("panel").innerHTML =
         Object.entries(data.desks).map(
-            ([k,v]) => `<div>${k}: ${v}</div>`
+            ([k,v]) => `<div class="row">${k} <span>${v}</span></div>`
         ).join("");
 
-    if(data.call_id !== lastCallId){
+    if(data.number !== lastNumber){
 
         document.getElementById("number").innerText = data.number;
         document.getElementById("desk").innerText = data.desk;
+        document.getElementById("scroll").innerText = data.announcement;
 
         if(unlocked){
-
             let ding = document.getElementById("ding");
             let voice = document.getElementById("voice");
 
             ding.currentTime = 0;
-            await playAudio(ding);
+            ding.play().catch(()=>{});
 
-            // wait 2 seconds
-            setTimeout(async ()=>{
-                voice.src = "/voice/" + data.number + "/" + data.desk + "?t=" + Date.now();
-                await playAudio(voice);
+            setTimeout(()=>{
+                voice.src = "/voice/" + data.number + "/" + data.desk;
+                voice.play().catch(()=>{});
             },2000);
         }
 
-        lastCallId = data.call_id;
+        lastNumber = data.number;
     }
 
 });
@@ -137,12 +124,66 @@ fetch("/data").then(r=>r.json()).then(async data=>{
 
 </body>
 </html>
-""")
+"""
 
 # ================= STAFF =================
+staff_html = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>STAFF CONTROL</title>
+<style>
+body{background:#0f172a;color:white;text-align:center;font-family:Arial;}
+button{padding:10px;margin:5px;font-size:16px;}
+input,select{padding:8px;margin:5px;}
+</style>
+</head>
+<body>
+
+<h1>STAFF CONTROL</h1>
+
+{% for desk in desks %}
+<h2>{{desk}} → {{desks[desk]}}</h2>
+<form method="post">
+<input type="hidden" name="desk" value="{{desk}}">
+<button name="action" value="next">NEXT</button>
+<button name="action" value="recall">RECALL</button>
+</form>
+{% endfor %}
+
+<h2>Manual Assign</h2>
+<form method="post">
+<input name="manual_number" placeholder="Enter number">
+<select name="desk">
+{% for desk in desks %}
+<option>{{desk}}</option>
+{% endfor %}
+</select>
+<button name="action" value="assign">ASSIGN</button>
+</form>
+
+<h2>Update Announcement</h2>
+<form method="post">
+<input name="announcement" placeholder="New announcement">
+<button name="action" value="update_announcement">UPDATE</button>
+</form>
+
+</body>
+</html>
+"""
+
+# ================= ROUTES =================
+@app.route("/")
+def home():
+    return render_template_string(display_html,
+        number=last_called["number"],
+        desk=last_called["desk"],
+        announcement=announcement
+    )
+
 @app.route("/staff", methods=["GET","POST"])
 def staff():
-    global current_number, announcement, call_id
+    global current_number, announcement
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -152,67 +193,42 @@ def staff():
             num = str(current_number).zfill(3)
             desks[desk] = num
             last_called["number"] = num
-            last_called["desk"] = desk
+            last_called["desk"] = f"GO TO {desk}"
             current_number += 1
-            call_id += 1
 
         elif action == "recall":
             num = desks.get(desk)
             if num != "---":
                 last_called["number"] = num
-                last_called["desk"] = desk
-                call_id += 1
+                last_called["desk"] = f"GO TO {desk}"
 
         elif action == "assign":
-            num = request.form.get("num")
+            num = request.form.get("manual_number")
             if num and num.isdigit():
                 num = str(int(num)).zfill(3)
                 desks[desk] = num
                 last_called["number"] = num
-                last_called["desk"] = desk
-                call_id += 1
+                last_called["desk"] = f"GO TO {desk}"
 
-        elif action == "announce":
-            txt = request.form.get("text")
-            if txt:
-                announcement = txt
+        elif action == "update_announcement":
+            new_text = request.form.get("announcement")
+            if new_text:
+                announcement = new_text
 
-    return render_template_string("""
-<html>
-<body style="background:#0f172a;color:white;font-family:Arial;padding:20px;">
+    return render_template_string(staff_html, desks=desks)
 
-<h1>STAFF CONTROL</h1>
-
-{% for d in desks %}
-<div style="background:#1e293b;padding:10px;margin:10px;">
-<b>{{d}} → {{desks[d]}}</b><br>
-<form method="post">
-<input type="hidden" name="desk" value="{{d}}">
-<button name="action" value="next">NEXT</button>
-<button name="action" value="recall">RECALL</button>
-</form>
-</div>
-{% endfor %}
-
-</body>
-</html>
-""", desks=desks)
-
-# ================= DATA =================
 @app.route("/data")
 def data():
     return jsonify({
         "number": last_called["number"],
         "desk": last_called["desk"],
         "announcement": announcement,
-        "desks": desks,
-        "call_id": call_id
+        "desks": desks
     })
 
-# ================= AUDIO =================
 @app.route("/voice/<num>/<desk>")
 def voice(num, desk):
-    return send_file(get_voice(num, desk))
+    return send_file(generate_voice(num, desk))
 
 @app.route("/sound")
 def sound():
