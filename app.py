@@ -12,7 +12,7 @@ DESKS = [f"Desk {i}" for i in range(1, 8)]
 desks = {d: "---" for d in DESKS}
 
 last_called = {"number": "001", "desk": "Desk 1"}
-call_id = 0  # 🔥 NEW: triggers recall updates
+call_id = 0
 
 os.makedirs("voices", exist_ok=True)
 
@@ -42,50 +42,62 @@ body {margin:0;font-family:Arial;text-align:center;background:white;}
 .number {font-size:160px;color:#dc2626;text-shadow:4px 4px black;}
 .desk {font-size:50px;margin-bottom:20px;}
 .panel {position:fixed;right:0;top:60px;width:260px;background:#f3f4f6;padding:10px;}
-.row {display:flex;justify-content:space-between;margin:6px 0;font-weight:bold;}
 
 .overlay {
 position:fixed;top:0;left:0;width:100%;height:100%;
 background:black;color:white;display:flex;
 justify-content:center;align-items:center;
 font-size:28px;z-index:9999;
+cursor:pointer;
 }
 </style>
 </head>
 
 <body>
 
-<div class="overlay" id="unlock">TAP TO ENABLE SOUND 🔊</div>
+<div class="overlay" id="unlock">TAP ANYWHERE TO ENABLE SOUND 🔊</div>
 
 <div class="top" id="announcement"></div>
-
 <div class="number" id="number">001</div>
 <div class="desk" id="desk">Desk 1</div>
-
 <div class="panel" id="panel"></div>
 
-<audio id="ding" src="/sound"></audio>
-<audio id="voice"></audio>
+<audio id="ding" src="/sound" preload="auto"></audio>
+<audio id="voice" preload="auto"></audio>
 
 <script>
 let unlocked = false;
 let lastCallId = -1;
 
-// 🔓 unlock audio
-document.body.addEventListener("click", async function(){
-    if(!unlocked){
-        let d = document.getElementById("ding");
-        try{
-            await d.play();
-            d.pause();
-            d.currentTime = 0;
-            unlocked = true;
-            document.getElementById("unlock").style.display="none";
-        }catch(e){}
+// 🔓 Unlock audio PROPERLY
+document.getElementById("unlock").addEventListener("click", async () => {
+    const ding = document.getElementById("ding");
+
+    try {
+        await ding.play();
+        ding.pause();
+        ding.currentTime = 0;
+
+        unlocked = true;
+        document.getElementById("unlock").style.display = "none";
+        console.log("🔊 Audio unlocked");
+    } catch (e) {
+        alert("Tap again to enable sound");
     }
 });
 
-// 🔄 polling
+// 🔊 FORCE PLAY FUNCTION (retry system)
+async function playAudio(audio){
+    try{
+        await audio.play();
+    }catch(e){
+        setTimeout(async ()=>{
+            try{ await audio.play(); }catch(e){}
+        },300);
+    }
+}
+
+// 🔁 POLLING
 setInterval(()=>{
 fetch("/data").then(r=>r.json()).then(async data=>{
 
@@ -93,29 +105,26 @@ fetch("/data").then(r=>r.json()).then(async data=>{
 
     document.getElementById("panel").innerHTML =
         Object.entries(data.desks).map(
-            ([k,v]) => `<div class="row">${k} <span>${v}</span></div>`
+            ([k,v]) => `<div>${k}: ${v}</div>`
         ).join("");
 
-    // 🔥 FIX: use call_id instead of number
     if(data.call_id !== lastCallId){
 
         document.getElementById("number").innerText = data.number;
         document.getElementById("desk").innerText = data.desk;
 
         if(unlocked){
+
             let ding = document.getElementById("ding");
             let voice = document.getElementById("voice");
 
-            try{
-                ding.currentTime = 0;
-                await ding.play();
-            }catch(e){}
+            ding.currentTime = 0;
+            await playAudio(ding);
 
+            // wait 2 seconds
             setTimeout(async ()=>{
-                try{
-                    voice.src = "/voice/" + data.number + "/" + data.desk;
-                    await voice.play();
-                }catch(e){}
+                voice.src = "/voice/" + data.number + "/" + data.desk + "?t=" + Date.now();
+                await playAudio(voice);
             },2000);
         }
 
@@ -145,14 +154,14 @@ def staff():
             last_called["number"] = num
             last_called["desk"] = desk
             current_number += 1
-            call_id += 1  # 🔥 trigger
+            call_id += 1
 
         elif action == "recall":
             num = desks.get(desk)
             if num != "---":
                 last_called["number"] = num
                 last_called["desk"] = desk
-                call_id += 1  # 🔥 trigger recall
+                call_id += 1
 
         elif action == "assign":
             num = request.form.get("num")
@@ -170,48 +179,20 @@ def staff():
 
     return render_template_string("""
 <html>
-<head>
-<style>
-body{background:#0f172a;color:white;font-family:Arial;padding:20px;}
-.card{background:#1e293b;padding:15px;margin:10px;border-radius:10px;}
-button{padding:10px;margin:5px;border:none;border-radius:6px;}
-.next{background:#22c55e;}
-.recall{background:#3b82f6;color:white;}
-</style>
-</head>
-<body>
+<body style="background:#0f172a;color:white;font-family:Arial;padding:20px;">
 
 <h1>STAFF CONTROL</h1>
 
 {% for d in desks %}
-<div class="card">
-<h3>{{d}} → {{desks[d]}}</h3>
+<div style="background:#1e293b;padding:10px;margin:10px;">
+<b>{{d}} → {{desks[d]}}</b><br>
 <form method="post">
 <input type="hidden" name="desk" value="{{d}}">
-<button class="next" name="action" value="next">NEXT</button>
-<button class="recall" name="action" value="recall">RECALL</button>
+<button name="action" value="next">NEXT</button>
+<button name="action" value="recall">RECALL</button>
 </form>
 </div>
 {% endfor %}
-
-<div class="card">
-<h3>Manual Assign</h3>
-<form method="post">
-<input name="num">
-<select name="desk">
-{% for d in desks %}<option>{{d}}</option>{% endfor %}
-</select>
-<button name="action" value="assign">Assign</button>
-</form>
-</div>
-
-<div class="card">
-<h3>Announcement</h3>
-<form method="post">
-<input name="text">
-<button name="action" value="announce">Update</button>
-</form>
-</div>
 
 </body>
 </html>
@@ -225,7 +206,7 @@ def data():
         "desk": last_called["desk"],
         "announcement": announcement,
         "desks": desks,
-        "call_id": call_id  # 🔥 important
+        "call_id": call_id
     })
 
 # ================= AUDIO =================
